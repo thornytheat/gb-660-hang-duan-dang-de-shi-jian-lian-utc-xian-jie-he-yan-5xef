@@ -29,3 +29,7 @@ target/
 *.o
 *.obj
 .DS_Store
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

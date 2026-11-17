@@ -14,6 +14,7 @@
 | M4 UTC 航链 | 换算航段并校验先后顺序 | POST /api/itineraries/build | `app/modules/m4_itinerary/builder.py` `app/modules/m4_itinerary/validate.py` | `tests/test_m4_itinerary.py` |
 | M5 衔接判定 | 核对航站楼换乘与等待 | POST /api/connections/check | `app/modules/m5_connections/rules.py` `app/modules/m5_connections/windows.py` | `tests/test_m5_connections.py` |
 | M6 批次导出 | 核对航段守恒并导出时刻 | POST /api/reconcile | `app/modules/m6_batches/compare.py` `app/modules/m6_batches/exporter.py` | `tests/test_m6_batches.py` |
+| M7 中转保障容量 | UTC 时窗容量调整与航链占位/确认/撤销 | PUT /api/capacity/windows · POST /api/capacity/apply | `app/modules/m7_capacity/service.py` `app/modules/m7_capacity/storage.py` `app/modules/m7_capacity/chains.py` | `tests/test_m7_capacity.py` `tests/test_m7_api.py` |
 
 ## 陷阱登记
 
@@ -29,12 +30,19 @@
 | TRAP-14 | 同航段时刻冲突 | 后写覆盖原计划 | 冲突版本进入隔离区 | `app/modules/m1_legs/parser.py` | `tests/test_m1_legs.py::test_conflicting_duplicate_detected` |
 | TRAP-23 | 衔接窗口端点 | 结束时刻被重复计入 | 使用半开区间 | `app/modules/m5_connections/windows.py` | `tests/test_m5_connections.py::test_half_open_window_excludes_end` |
 | TRAP-25 | 时区版本重叠 | 随机选中一版偏移 | 多个生效版本立即拒绝 | `app/modules/m2_airports/registry.py` | `tests/test_m2_airports.py::test_overlapping_timezone_versions_rejected` |
+| TRAP-31 | 缩容直接裁撤已确认 | 毁约或继续超配 | 已确认超额记欠额不毁约，未确认占位释放转候补 | `app/modules/m7_capacity/service.py` | `tests/test_m7_capacity.py::test_shrink_keeps_confirmed_and_books_deficit` |
+| TRAP-32 | 并发缩容与确认脏写 | 各按旧容量裁决导致超配 | 进程锁 + 单事务 + 容量版本，过期版本 409 | `app/modules/m7_capacity/storage.py` `app/modules/m7_capacity/service.py` | `tests/test_m7_capacity.py::test_concurrent_shrink_and_confirm_are_serialized_on_one_version` |
+| TRAP-33 | 撤销重试重复归还 | 同一占位被释放两次 | 状态机幂等，仅 ACTIVE 占位可释放 | `app/modules/m7_capacity/service.py` | `tests/test_m7_capacity.py::test_cancel_retry_does_not_double_release` |
+| TRAP-34 | 部分转机点获配 | 整链被拆成半条保障 | 整链获配或整链候补，任一窗不足即不占容量 | `app/modules/m7_capacity/service.py` | `tests/test_m7_capacity.py::test_insufficient_capacity_waitlists_whole_chain_without_holding` |
+| TRAP-35 | 欠额窗继续收新占位 | 欠额越滚越大 | 欠额清偿前该窗 accepting_new=false，新增一律候补 | `app/modules/m7_capacity/service.py` | `tests/test_m7_capacity.py::test_new_apply_blocked_while_deficit_open` |
 
 ## 对账规则
 
 - 输入航段 = 有效航段 + 冲突航段 + 隔离航段。
 - 行程航段 = 可衔接航段 + 不可衔接航段。
 - 到达 UTC 必须晚于起飞 UTC，飞行时长不得超过 18 小时。
+- 时窗占用 = 已确认占位 + 未确认占位；欠额 = max(0, 已确认 − 上限)，欠额 > 0 时暂停新增占位。
+- 保障申请守恒：HELD + WAITLISTED + CONFIRMED + CANCELLED + REJECTED 覆盖全部申请，撤销与缩容释放均落事件流。
 
 ## 已知不覆盖
 

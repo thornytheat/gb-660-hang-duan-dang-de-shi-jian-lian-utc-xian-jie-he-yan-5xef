@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpis">
+  <div class="kpi"><b>容量窗</b><strong id="kpi-windows">–</strong><small>个 UTC 窗</small></div>
+  <div class="kpi"><b>占位</b><strong id="kpi-held">–</strong><small>未确认</small></div>
+  <div class="kpi"><b>已确认</b><strong id="kpi-confirmed">–</strong><small>全程保障</small></div>
+  <div class="kpi"><b>欠额窗</b><strong id="kpi-deficit">–</strong><small>暂停新增</small></div>
+</section>
+<div class="grid grid--split">
+  <section class="panel">
+    <div class="panel__head"><h2>容量窗与欠额</h2><span class="panel__meta">UTC 半开区间</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger"><thead><tr><th>机场</th><th>UTC 时窗</th><th class="num">上限</th><th class="num">已确认</th><th class="num">占位</th><th class="num">欠额</th><th>版本</th><th>新增</th></tr></thead>
+      <tbody id="windows-body"><tr><td colspan="8" class="num">等待回读</td></tr></tbody></table>
+    </div>
+  </section>
+  <section class="panel panel--evidence">
+    <div class="panel__head"><h2>保障申请</h2><span class="panel__meta">整链裁决</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger"><thead><tr><th>申请号</th><th>状态</th><th>转机点</th><th>版本</th><th>原因码</th></tr></thead>
+      <tbody id="requests-body"><tr><td colspan="5" class="num">等待回读</td></tr></tbody></table>
+    </div>
+  </section>
+  <section class="panel panel--status">
+    <div class="panel__head"><h2>进度与事件</h2><span class="panel__meta">占位/确认/候补/释放</span></div>
+    <div class="panel__body">
+      <div class="legend" id="progress-line">等待回读</div>
+      <pre id="result">点击「运行样例」灌入演示容量窗并提交两条整链申请，随后可在此回读。</pre>
+    </div>
+  </section>
+</div>
+<script>
+async function refresh(){
+  const response = await fetch("/api/capacity/snapshot");
+  const data = await response.json();
+  document.querySelector("#kpi-windows").textContent = data.windows.length;
+  document.querySelector("#kpi-held").textContent = data.counts.HELD || 0;
+  document.querySelector("#kpi-confirmed").textContent = data.counts.CONFIRMED || 0;
+  document.querySelector("#kpi-deficit").textContent = data.deficits.length;
+  document.querySelector("#windows-body").innerHTML = data.windows.map(w =>
+    `<tr><td>${w.airport}</td><td>${w.window_start} → ${w.window_end}</td><td class="num">${w.limit}</td><td class="num">${w.confirmed}</td><td class="num">${w.held}</td><td class="num">${w.deficit}</td><td>v${w.version}</td><td>${w.accepting_new ? "开放" : "暂停"}</td></tr>`
+  ).join("") || `<tr><td colspan="8" class="num">暂无容量窗</td></tr>`;
+  document.querySelector("#requests-body").innerHTML = data.requests.map(r =>
+    `<tr><td>${r.request_id}</td><td>${r.status}</td><td>${r.buckets.map(b => b.airport).join(",") || "—"}</td><td>v${r.decided_version}</td><td>${r.reason_code || ""}</td></tr>`
+  ).join("") || `<tr><td colspan="5" class="num">暂无申请</td></tr>`;
+  const p = data.progress;
+  document.querySelector("#progress-line").innerHTML =
+    `<span>占位 ${p.held}</span><span>确认 ${p.confirmed}</span><span>候补 ${p.waitlisted}</span><span>释放 ${p.released}</span><span>撤销 ${p.cancelled}</span><span>拒绝 ${p.rejected}</span>`;
+  document.querySelector("#result").textContent = JSON.stringify(data.deficits, null, 2) || "[]";
+}
+document.querySelector("#run")?.addEventListener("click", () => refresh());
+refresh();
+</script>
+{% endblock %}
